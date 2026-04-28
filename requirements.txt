@@ -4,7 +4,7 @@ anthropic
 chromadb==0.4.24
 pysqlite3-binary
 pdfplumber
-numpy==1.26.4
+numpy<2.0
 sentence-transformers==3.0.1
 transformers==4.44.2
 torch==2.2.2
