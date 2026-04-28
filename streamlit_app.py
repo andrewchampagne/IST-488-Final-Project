@@ -27,6 +27,20 @@ memory_file = f"memory_{username}.json"
 
 st.sidebar.write(f"Active user: **{username}**")
 
+# detect username change and reset all user-scoped state to prevent leaks
+# (profile, chat history, etc. should never carry across accounts)
+USER_SCOPED_STATE_KEYS = [
+    "profile",
+    "memories",
+    "messages",
+    "greeted",
+    "last_extracted_memories",
+]
+if st.session_state.get("active_user") != username:
+    st.session_state.active_user = username
+    for key in USER_SCOPED_STATE_KEYS:
+        st.session_state.pop(key, None)
+
 if st.sidebar.button("Clear chat", use_container_width=True):
     st.session_state.messages = []
     st.session_state.greeted = False
@@ -51,8 +65,12 @@ def save_memories(memory_file, memories, profile=None):
 memories, saved_profile = load_memory(memory_file)
 st.session_state.memories = memories  # make memories available to tools in RAG_Pipeline
 
-if saved_profile and "profile" not in st.session_state:
+# always sync profile from disk so a saved profile loads, and a missing one
+# doesn't leak from a previous user's session
+if saved_profile:
     st.session_state.profile = saved_profile
+else:
+    st.session_state.pop("profile", None)
 
 def generate_profile(memories, username):
     if not memories:
