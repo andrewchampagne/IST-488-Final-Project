@@ -10,6 +10,10 @@ except ImportError:
     retrieve_context = None
 
 
+CHAT_MODEL = "gpt-5-mini"
+EMBEDDING_MODEL = "text-embedding-ada-002"
+
+
 # cache the reranker so it only downloads once per container, not on every rerun.
 # falls back to None if the model can't be fetched (e.g. HF rate limit on cloud).
 @st.cache_resource(show_spinner=False)
@@ -171,7 +175,7 @@ def generate_practice_question(topic, difficulty, memories, context):
         """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=CHAT_MODEL,
         messages=[{"role": "user", "content": prompt}]
     )
 
@@ -186,7 +190,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
     # embed the query manually so we don't depend on chroma's built-in embedding fn
     embed_response = client.embeddings.create(
         input=query,
-        model="text-embedding-ada-002"
+        model=EMBEDDING_MODEL
     )
     query_embedding = embed_response.data[0].embedding
 
@@ -242,14 +246,14 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
     is_memory_query = any(kw in query.lower() for kw in memory_keywords)
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=CHAT_MODEL,
         messages=messages,
         tools=tools,
         tool_choice={
             "type": "function",
             "function": {"name": "summarize_topic_from_memory"}
-        } if is_memory_query else "auto"
-)
+        } if is_memory_query else "auto",
+    )
 
     response_message = response.choices[0].message
 
@@ -306,7 +310,7 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
 
         # Second LLM call — now with the tool result included
         second_response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=CHAT_MODEL,
             messages=messages
         )
         answer = second_response.choices[0].message.content

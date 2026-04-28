@@ -8,11 +8,14 @@ import openai
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
+CHAT_MODEL = "gpt-5-mini"
+EXTRACTION_MODEL = "gpt-4o-mini"
+
 
 # user selection for user-based memory
 st.sidebar.header("User Settings")
 
-username = st.sidebar.text_input("Enter your username:", key="username_input")
+username = st.sidebar.text_input("Username:", key="username_input")
 
 if not username:
     st.warning("Please enter a username to begin.")
@@ -23,6 +26,11 @@ username = username.strip().lower().replace(" ", "_")
 memory_file = f"memory_{username}.json"
 
 st.sidebar.write(f"Active user: **{username}**")
+
+if st.sidebar.button("Clear chat", use_container_width=True):
+    st.session_state.messages = []
+    st.session_state.greeted = False
+    st.rerun()
 
 
 # load + save memory
@@ -46,49 +54,72 @@ st.session_state.memories = memories  # make memories available to tools in RAG_
 if saved_profile and "profile" not in st.session_state:
     st.session_state.profile = saved_profile
 
-
-# study profile generator
 def generate_profile(memories, username):
     if not memories:
-        return "No learning data yet. Keep chatting to build your profile!"
+        return "No previously recorded struggles. Keep chatting to build your profile!"
 
     memory_str = "\n".join([f"- {m}" for m in memories])
-
-    response = st.session_state.openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{
-            "role": "user",
-            "content": f"""
-            You are summarizing a student's learning profile for IST 387 at Syracuse University.
-
-            Based on the following observed struggles, write a short, encouraging 3-part profile:
-            1. **Concepts to focus on** — a bullet list of topics they should review
-            2. **Strengths** — infer what they seem comfortable with based on what ISN'T flagged
-            3. **Growth** - where you've noticed growth from the questions they've been asking/stopped asking
-            4. **Study tip** — one personalized recommendation based on their pattern of struggles
-
-            Keep it concise, friendly, and actionable. Address the student directly.
-
-            Observed struggles:
-            {memory_str}
-            """
-        }]
-    )
-    return response.choices[0].message.content
+    try:
+        response = st.session_state.openai_client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[{
+                "role": "user",
+                "content": f"""
+                    You are summarizing a student's learning profile for IST 387 (R programming) at Syracuse University.
+                    Below is a list of concepts the student has explicitly struggled with during tutoring sessions. Write a short, encouraging profile in markdown, addressed directly to the student as "you". Keep it under 200 words total.
+                    Use this exact format:
+                    ### Concepts to focus on
+                    Bullet list of the most important topics from their struggles to review. Group similar struggles together when possible.
+                    ### Patterns I noticed
+                    1–2 sentences identifying themes in their struggles (e.g. "many questions are around tidyverse syntax"). Stay grounded in the recorded struggles only. do not invent themes.
+                    ### Study tip
+                    ONE specific, actionable recommendation tied to their most common struggle.
+                    Rules:
+                    - Only reference topics that appear in the recorded struggles below.
+                    - Do not infer strengths, growth, or progress that isn't clearly shown in the data.
+                    - If there are fewer than 3 recorded struggles, briefly acknowledge that and encourage them to keep chatting to build a richer profile.
+                    Recorded struggles:
+                    {memory_str}
+                """
+            }],
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"generate_profile error: {e}")
+        return "Sorry, I couldn't generate your profile right now. Please try again in a moment."
 
 
 # system message
-system_message = "You are a helpful teaching assistant for IST 387 at Syracuse University. If reporting on a student's struggles or learning history, " \
-"only reference what is explicitly recorded in their memory. " \
-"Never infer, guess, or generalize struggles that are not directly recorded."
+system_message = (
+    "You are an IST 387 (R programming) teaching assistant at Syracuse University.\n"
+    "Your job is to help students understand course concepts, debug R code, and prepare "
+    "for assignments using the verified course materials retrieved for each question.\n\n"
+    "Behavior rules:\n"
+    "Stay on topic. Only answer questions related to IST 387, R, or data analysis. "
+    "If asked something unrelated, briefly redirect the student back to the course.\n"
+    "Prioritize the retrieved course materials over your general knowledge. If the "
+    "materials don't cover the question, say so directly and point the student to TAs, "
+    "office hours, or the syllabus rather than guessing.\n"
+    "When showing code, use R, explain it step-by-step, and tie it back to the course material it comes from.\n"
+    "Be concise, friendly, and address the student directly as 'you'.\n\n"
+    "\n\n"
+    "Memory rules (These absolutely must be followed):\n"
+    "A list of concepts this student has previously struggled with may be provided below.\n"
+    "Only reference struggles that are EXPLICITLY listed. Never infer, guess, or "
+    "generalize struggles that are not recorded.\n"
+    "If asked about their progress, weaknesses, or what they should study, use ONLY the recorded list."
+)
+
 
 if memories:
-    memory_str = "\n".join([f"- {m}" for m in memories])
+    # cap to most recent 30 to keep system prompt size bounded as memories grow
+    recent_memories = memories[-30:]
+    memory_str = "\n".join([f"- {m}" for m in recent_memories])
     system_message += (
-        "\n\nHere are some things you've learned from previous interactions with this user:\n"
+        "\n\nRecorded struggles for this student:\n"
         f"{memory_str}\n\n"
-        "Use this information to help answer the user's questions, but do not rely on it exclusively. "
-        "Always use verified course materials as your primary source."
+        "Use these only when relevant to the student's current question. "
+        "Never invent additional struggles."
     )
 
 # initialize chromaDB
@@ -175,9 +206,27 @@ if "greeted" not in st.session_state:
 
 
 # display chat history
+def render_sources(sources):
+    if not sources:
+        return
+    seen = set()
+    unique_sources = []
+    for s in sources:
+        src = (s or {}).get("source", "Unknown")
+        if src not in seen:
+            seen.add(src)
+            unique_sources.append(src)
+    if unique_sources:
+        with st.expander("Sources used"):
+            for src in unique_sources:
+                st.markdown(f"- `{src}`")
+
+
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if msg["role"] == "assistant":
+            render_sources(msg.get("sources"))
 
 
 # chat input
@@ -201,14 +250,25 @@ if question:
     # generate answer using RAG + short-term memory + long-term memory
     with st.chat_message("assistant"):
         with st.spinner("Searching verified documents..."):
-            answer, _ = rag_pipeline(question, system_message, conversation_history=conversation_history)
+            try:
+                answer, sources = rag_pipeline(
+                    question,
+                    system_message,
+                    conversation_history=conversation_history,
+                )
+            except Exception as e:
+                print(f"rag_pipeline error: {e}")
+                answer = "Sorry, I hit an error reaching the assistant. Please try again."
+                sources = None
 
         st.write(answer)
+        render_sources(sources)
 
-    # store assistant message
+    # store assistant message (including sources so they re-render after rerun)
     st.session_state.messages.append({
         "role": "assistant",
-        "content": answer
+        "content": answer,
+        "sources": sources,
     })
 
 
@@ -225,22 +285,20 @@ if question:
         - ONLY return a JSON list of short phrases.
         - If nothing new is learned, return [].
 
-        Already known memories:
+        These are the user's previously recorded struggles:
         {json.dumps(memories)}
+        This is the user's message: {user_msg}
+        This is the assistant's message: {assistant_msg}
 
-        User message: {user_msg}
-        Assistant message: {assistant_msg}
-
-        Return ONLY valid JSON. No explanation.
-        Example: ["confused about joins", "struggling with map functions"]
+        Return only a valid JSON list. There is absolutely no need to return anything other than JSON.
+        Example: ["dplyr joins", "ggplot aes mapping", "for-loop indexing in R"]
         """
 
-        response = st.session_state.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": extraction_prompt}]
-        )
-
         try:
+            response = st.session_state.openai_client.chat.completions.create(
+                model=EXTRACTION_MODEL,
+                messages=[{"role": "user", "content": extraction_prompt}],
+            )
             new_memories = json.loads(response.choices[0].message.content)
             st.session_state.last_extracted_memories = new_memories
 
@@ -251,8 +309,12 @@ if question:
                 st.session_state.memories = memories  # keep session state in sync after new memories are added
                 save_memories(memory_file, memories, st.session_state.get("profile"))
 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print(f"memory extraction JSON parse error: {e}")
             st.session_state.last_extracted_memories = "JSON decode error"
+        except Exception as e:
+            print(f"memory extraction error: {e}")
+            st.session_state.last_extracted_memories = f"error: {e}"
 
 
     # refresh UI so answer appears immediately
