@@ -2,3 +2,4 @@
 .venv311/
 .streamlit/secrets.toml
 secrets.toml
+ChromaDB_for_HelpBot/
