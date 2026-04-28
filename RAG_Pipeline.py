@@ -9,7 +9,19 @@ try:
 except ImportError:
     retrieve_context = None
 
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+# cache the reranker so it only downloads once per container, not on every rerun.
+# falls back to None if the model can't be fetched (e.g. HF rate limit on cloud).
+@st.cache_resource(show_spinner=False)
+def _load_reranker():
+    try:
+        return CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    except Exception as e:
+        print(f"Reranker unavailable, falling back to no reranking: {e}")
+        return None
+
+
+reranker = _load_reranker()
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 
@@ -310,6 +322,10 @@ def rerank(query, docs, metadatas, top_n=4):
 
     if not docs:
         return [], []
+
+    # if the reranker failed to load, fall back to the original retrieval order
+    if reranker is None:
+        return docs[:top_n], metadatas[:top_n]
 
     pairs = [(query, doc) for doc in docs]
 
