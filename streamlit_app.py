@@ -243,7 +243,7 @@ if len(st.session_state.messages) <= 1 and not question:
         "Explain dplyr joins with a simple example",
         "Help me understand ggplot2 syntax",
         "Quiz me on for-loops in R",
-        "What am I struggling with?",
+        "I need help",
     ]
     cols = st.columns(2)
     for i, prompt in enumerate(starter_prompts):
