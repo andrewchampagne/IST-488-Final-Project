@@ -213,8 +213,20 @@ def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
     messages.append({"role": "user", "content": prompt})
 
     # First LLM call — may invoke a tool
-    memory_keywords = ["struggling", "struggle", "confused", "where have i", "where am i",
-                    "what have i", "what am i", "focus on", "should i study", "my weakness"]
+    # Only force the memory-lookup tool on phrases that are clearly RETROSPECTIVE
+    # (asking about past struggles), not phrases that just mean "I need help right now".
+    memory_keywords = [
+        "what am i struggling with",
+        "what have i struggled with",
+        "what am i confused about",
+        "what have i been confused about",
+        "where have i struggled",
+        "where am i struggling",
+        "what should i study",
+        "what should i focus on",
+        "my weaknesses",
+        "my study profile",
+    ]
     is_memory_query = any(kw in query.lower() for kw in memory_keywords)
 
     response = client.chat.completions.create(
