@@ -5,9 +5,10 @@ import pdfplumber
 import openai
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
+
+EMBEDDING_MODEL = "text-embedding-ada-002"
 
 
 # SQLite fix for Streamlit Cloud
@@ -25,19 +26,13 @@ if 'openai_client' not in st.session_state:
 
 
 # chromaDB setup
-embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=openai_api_key,
-    model_name="text-embedding-ada-002"
-)
-
 chroma_client = chromadb.PersistentClient(
     path="./ChromaDB_for_HelpBot",
     settings=Settings(anonymized_telemetry=False)
 )
 
 collection = chroma_client.get_or_create_collection(
-    name="IST387Collection",
-    embedding_function=embedding_fn
+    name="IST387Collection"
 )
 
 if "collection" not in st.session_state:
@@ -83,7 +78,16 @@ def add_to_collection(collection, text, file_name):
     metadatas = [{"source": file_name, "chunk": i} for i in range(len(chunks))]
 
     try:
-        collection.add(documents=chunks, ids=ids, metadatas=metadatas)
+        client = st.session_state.openai_client
+        response = client.embeddings.create(input=chunks, model=EMBEDDING_MODEL)
+        embeddings = [item.embedding for item in response.data]
+
+        collection.add(
+            documents=chunks,
+            ids=ids,
+            metadatas=metadatas,
+            embeddings=embeddings,
+        )
         print(f"Added {len(chunks)} chunks from {file_name}")
     except Exception as e:
         print(f"Error adding {file_name}: {e}")
@@ -120,9 +124,13 @@ if "ingestion_done" not in st.session_state:
 # retrieval 
 def retrieve_context(query, k=4):
     collection = st.session_state.collection
+    client = st.session_state.openai_client
+
+    response = client.embeddings.create(input=query, model=EMBEDDING_MODEL)
+    query_embedding = response.data[0].embedding
 
     results = collection.query(
-        query_texts=[query],
+        query_embeddings=[query_embedding],
         n_results=k
     )
 

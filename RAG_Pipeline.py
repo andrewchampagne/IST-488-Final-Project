@@ -171,9 +171,16 @@ def generate_practice_question(topic, difficulty, memories, context):
 # ==============================
 def rag_pipeline(query, system_message=None, conversation_history=None, k=4):
 
+    # embed the query manually so we don't depend on chroma's built-in embedding fn
+    embed_response = client.embeddings.create(
+        input=query,
+        model="text-embedding-ada-002"
+    )
+    query_embedding = embed_response.data[0].embedding
+
     # Top-k chunks
     results = st.session_state.collection.query(
-        query_texts=[query],
+        query_embeddings=[query_embedding],
         n_results=10
     )
 

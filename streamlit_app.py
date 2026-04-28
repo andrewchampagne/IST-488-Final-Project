@@ -3,7 +3,6 @@ import json
 import os
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
 from RAG_Pipeline import rag_pipeline
 import openai
 
@@ -93,19 +92,13 @@ if memories:
     )
 
 # initialize chromaDB
-embedding_fn = embedding_functions.OpenAIEmbeddingFunction(
-    api_key=st.secrets["OPENAI_API_KEY"],
-    model_name="text-embedding-ada-002"
-)
-
 chroma_client = chromadb.PersistentClient(
     path="./ChromaDB_for_HelpBot",
     settings=Settings(anonymized_telemetry=False)
 )
 
 collection = chroma_client.get_or_create_collection(
-    name="IST387Collection",
-    embedding_function=embedding_fn
+    name="IST387Collection"
 )
 
 if "collection" not in st.session_state:
