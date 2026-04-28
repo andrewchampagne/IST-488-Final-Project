@@ -8,3 +8,4 @@ numpy<2.0
 sentence-transformers==3.0.1
 transformers==4.44.2
 torch==2.2.2
+protobuf<4.0.0
