@@ -100,7 +100,7 @@ system_message = (
     "Prioritize the retrieved course materials over your general knowledge. If the "
     "materials don't cover the question, say so directly and point the student to TAs, "
     "office hours, or the syllabus rather than guessing.\n"
-    "When showing code, use R, explain it step-by-step, and tie it back to the course material it comes from.\n"
+    "When showing code, use R and ALWAYS wrap it in triple-backtick fenced blocks with the language tag `r` (like ```r ... ```) so it renders with syntax highlighting. Explain the code step-by-step and tie it back to the course material it comes from.\n"
     "Be concise, friendly, and address the student directly as 'you'.\n\n"
     "\n\n"
     "Memory rules (These absolutely must be followed):\n"
@@ -155,10 +155,8 @@ if 'openai_client' not in st.session_state:
     #else:
         #st.write("**Last extracted memories:** None yet")
 
-
-# study profile - created with long-term memory
 st.sidebar.divider()
-with st.sidebar.expander("My Study Profile"):
+with st.sidebar.expander("Study Profile"):
     if st.button("Generate My Profile", key="gen_profile"):
         with st.spinner("Building your profile..."):
             st.session_state.profile = generate_profile(memories, username)
@@ -231,6 +229,29 @@ for msg in st.session_state.messages:
 
 # chat input
 question = st.chat_input("Ask any questions about IST 387...")
+
+# allow starter-prompt buttons (and any future programmatic inputs) to feed
+# into the same pipeline as typed input
+pending_question = st.session_state.pop("pending_question", None)
+if not question and pending_question:
+    question = pending_question
+
+# show suggested starter prompts on a fresh chat (only the welcome message exists)
+if len(st.session_state.messages) <= 1 and not question:
+    st.markdown("**Try asking:**")
+    starter_prompts = [
+        "Explain dplyr joins with a simple example",
+        "Help me understand ggplot2 syntax",
+        "Quiz me on for-loops in R",
+        "What am I struggling with?",
+    ]
+    cols = st.columns(2)
+    for i, prompt in enumerate(starter_prompts):
+        with cols[i % 2]:
+            if st.button(prompt, key=f"starter_{i}", use_container_width=True):
+                st.session_state.pending_question = prompt
+                st.rerun()
+
 
 if question:
     # store user message
